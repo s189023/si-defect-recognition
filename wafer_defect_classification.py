@@ -7,23 +7,18 @@ from torch_geometric.utils import dense_to_sparse, negative_sampling
 from torch_geometric.data import Data
 from torch_geometric.nn import GCNConv, SAGEConv, to_hetero
 from torch_geometric.loader import DataLoader, LinkNeighborLoader
-from sklearn.metrics import roc_auc_score
 
 from torchvision import datasets, transforms 
-import torchvision.models as models
 from torch.utils.data import DataLoader
 
 import pandas as pd
 import numpy as np
 import random
-#%pip install matplotlib
 import matplotlib.pyplot as plt
 
 from sklearn.metrics import confusion_matrix
 
-#%pip install seaborn
 import seaborn as sn
-from torchvision.utils import make_grid
 
 transform = transforms.Compose([
     transforms.Resize((100, 100)),
@@ -71,9 +66,15 @@ train_data, val_data, test_data = torch.utils.data.random_split(dataset, [num_tr
                                                                           num_test])
 
 # create DataLoader
-train_loader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers = 2)
-test_loader = DataLoader(dataset, batch_size=100, shuffle=True, num_workers = 2)
-
+train_loader = DataLoader(
+    train_data, batch_size=100, shuffle=True, num_workers=2
+)
+val_loader = DataLoader(
+    val_data, batch_size=100, shuffle=False, num_workers=2
+)
+test_loader = DataLoader(
+    test_data, batch_size=100, shuffle=False, num_workers=2
+)
 
 # creating CNN model 
 
@@ -101,7 +102,7 @@ class CNN(torch.nn.Module):
 
         self.bn3 = nn.BatchNorm2d(64)
         
-        # Fully connected layer: 16*7*7 input features (after two 2x2 poolings), 10 output features (num_classes)
+        # Fully connected layer: 16*12*12 input features after 3 pooling layers, 10 output features (num_classes)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
 
         self.fc1 = nn.Linear(9216, num_classes)
@@ -179,14 +180,15 @@ for epoch in range(1, 150):
     avg_train_loss = avg_train_loss / len(train_loader)
 
 
-    avg_test_loss = 0
+    avg_val_loss = 0
     correct = 0
     total = 0
+
     model.eval()
-    
-    with torch.no_grad(): 
-        for images, labels in test_loader: # during testing, weights remain fixed
- #           avg_test_loss = 0
+
+    with torch.no_grad():
+        for images, labels in val_loader:  
+ #           avg_val_loss = 0
         # to provide an unbiased evaluation of the model's current state 
         # no optimizer step needs to be defined
         # also no backpropagation 
@@ -195,8 +197,8 @@ for epoch in range(1, 150):
             labels = labels.to(device) 
 
             outputs = model(images) 
-            test_loss = F.cross_entropy(outputs, labels) 
-            avg_test_loss += test_loss.item() 
+            val_loss = F.cross_entropy(outputs, labels) 
+            avg_val_loss += val_loss.item() 
 
             preds = outputs.argmax(dim=1)
 
@@ -209,16 +211,36 @@ for epoch in range(1, 150):
 
     accuracy = correct / total
 
-    avg_test_loss = avg_test_loss / len(test_loader) 
+    avg_val_loss = avg_val_loss / len(val_loader) 
 
-    print(f"Epoch {epoch}: Train Loss = {avg_train_loss:.4f}, Test Loss = {avg_test_loss:.4f}, Test Accuracy = {accuracy:.4f}")
+    print(f"Epoch {epoch}: Train Loss = {avg_train_loss:.4f}, Val Loss = {avg_val_loss:.4f}, Val Accuracy = {accuracy:.4f}")
 
 model.eval()
 
 y_pred = []
 y_true = []
 
-# iterate over test data
+
+
+# Final test evaluation
+correct = 0
+total = 0
+
+with torch.no_grad():
+    for images, labels in test_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+
+        outputs = model(images)
+        preds = outputs.argmax(dim=1)
+
+        correct += (preds == labels).sum().item()
+        total += labels.size(0)
+
+test_accuracy = correct / total
+
+print(f"Final Test Accuracy = {test_accuracy:.4f}")
+
 
 with torch.no_grad():
     
